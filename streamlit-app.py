@@ -9,12 +9,16 @@ import platform
 import altair as alt
 from collections import Counter
 import io
+import random
+import base64
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 
 # -----------------------
 # 설정
 # -----------------------
-data_folder = r"C:\Users\Owner\Documents\streamlit_app"
+data_folder = r"C:\Users\Owner\Documents\python\data"
 logo_path = os.path.join(data_folder, "Kepco_logo.png")
 
 # -----------------------
@@ -119,13 +123,18 @@ for user in users:
 
 
 # -----------------------
-# 한글 폰트 설정 (Streamlit Cloud 호환)
+# 한글 폰트 설정
 # -----------------------
+if platform.system() == 'Windows':
+    font_path = 'C:/Windows/Fonts/malgun.ttf'
+elif platform.system() == 'Darwin':
+    font_path = '/System/Library/Fonts/Supplemental/AppleGothic.ttf'
+else:
+    font_path = '/usr/share/fonts/truetype/nanum/NanumGothic.ttf'
 
-from matplotlib import rcParams
-rcParams['font.family'] = 'NanumGothic'
-rcParams['axes.unicode_minus'] = False
-
+font_name = fm.FontProperties(fname=font_path).get_name()
+plt.rc('font', family=font_name)
+plt.rcParams['axes.unicode_minus'] = False
 
 # -----------------------
 # 자동 분류 기준 설정
@@ -236,48 +245,33 @@ hr {
 }
 </style>
 """, unsafe_allow_html=True)
-
 # -----------------------
-# csv 업로드
+# 전역 함수 정의
 # -----------------------
-uploaded_files = st.file_uploader("CSV 파일 여러 개 업로드", type=["csv"], accept_multiple_files=True)
+def normalize_project_name(name):
+    if pd.isna(name):
+        return ""
+    name = str(name).strip()
+    name = name.replace("-", ",").replace("–", ",").replace("—", ",")
+    name = re.sub(r'([가-힣a-zA-Z])\s*([0-9])', r'\1 \2', name)
+    name = name.replace("  ", " ")
+    name = re.sub(r'\s*,\s*', ",", name)
+    if re.search("새울.*(3.?4|3,4|3-4)", name):
+        return "새울 3,4"
+    return name
 
-df = None  # 전체 데이터프레임 초기화
+def extract_ngrams(text, n=2):
+    words = text.split()
+    return [' '.join(words[i:i+n]) for i in range(len(words)-n+1)]
 
-if uploaded_files:
-    dfs = []
-    for uploaded_file in uploaded_files:
-        for enc in ['cp949', 'utf-8', 'euc-kr']:
-            try:
-                temp_df = pd.read_csv(uploaded_file, encoding=enc)
-                temp_df["출처파일"] = uploaded_file.name
-                dfs.append(temp_df)
-                break
-            except:
-                continue
-
-    if dfs:
-        df = pd.concat(dfs, ignore_index=True)
-        st.success(f"✅ {len(uploaded_files)}개 CSV 파일이 성공적으로 병합되었습니다.")
-        st.dataframe(df.head())
-    else:
-        st.error("❌ CSV 파일을 읽을 수 없습니다. 인코딩 문제일 수 있습니다.")
-else:
-    st.info("👆 왼쪽에서 CSV 파일을 업로드하세요.")
-
-# ✅ 키워드 전처리 (불필요한 조사·접속사 제거)
 def clean_text(text):
     text = str(text).strip()
-    # 조사 및 불필요 단어 제거
     text = re.sub(r'\b(및|관련|의|에|에서|으로)\b', '', text)
-    # 중복 공백 제거
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
-
 def normalize_keyword(phrase):
-    phrase = clean_text(phrase)  # 먼저 전처리 실행
-
+    phrase = clean_text(phrase)
     replacements = {
         r'(일치 여부|여부 확인|확인 여부)': '여부 확인',
         r'(관련 요건.*|요건.*일치)': '요건 관련',
@@ -286,13 +280,10 @@ def normalize_keyword(phrase):
         r'(재발 방지|재발.*)': '재발 방지',
         r'(담당자.*)': '담당자 관련',
     }
-
     for pattern, replacement in replacements.items():
         if re.search(pattern, phrase):
             return replacement
-
     return phrase
-
 
 def convert_to_check_item(text):
     text = str(text).strip()
@@ -307,141 +298,86 @@ def convert_to_check_item(text):
     else:
         return f"{text} 여부 확인."
 
-import random
+def preprocess_excel(file):
+    temp_df = pd.read_excel(file, nrows=1, header=None)
+    if temp_df.iloc[0].isnull().all():
+        df = pd.read_excel(file, header=1)
+    else:
+        df = pd.read_excel(file)
 
+    # 연도 처리
+    year_col = [c for c in df.columns if "발행연도" in str(c)]
+    if year_col:
+        year_col = year_col[0]
+        df[year_col] = pd.to_numeric(df[year_col], errors="coerce")
+        df = df[(df[year_col] >= 2020) & (df[year_col] <= 2024)]
+        df["연도"] = df[year_col]
+    else:
+        df["연도"] = None
 
+    # 납품사업소 없을 경우
+    if "납품사업소" not in df.columns:
+        df["납품사업소"] = "새울 3,4"
+
+    # 권고사항 처리 + 보안 항목 제외
+    내용_col = [c for c in df.columns if "내용" in str(c)]
+    if 내용_col:
+        내용_col = 내용_col[0]
+        df = df[~df[내용_col].astype(str).str.contains("보안 항목", na=False)]
+        df["권고사항"] = df[내용_col]
+    else:
+        df["권고사항"] = ""
+
+    df["지적유형"] = "감사/검사"
+    codes = [f"A{str(i).zfill(2)}" for i in range(1, 71)] + [f"C{str(i).zfill(2)}" for i in range(1, 16)]
+    df["위배 내용"] = [random.choice(codes) for _ in range(len(df))]
+    df["출처파일"] = file.name
+    df["정규화_사업명"] = df["납품사업소"].apply(normalize_project_name)
+
+    # 등록일, 검토일 보정
+    if "연도" not in df.columns:
+        df["연도"] = pd.NaT
+    if "등록일" in df.columns:
+        df.loc[df["연도"].isna(), "연도"] = pd.to_datetime(df["등록일"], errors="coerce").dt.year
+    if "검토일" in df.columns:
+        df.loc[df["연도"].isna(), "연도"] = pd.to_datetime(df["검토일"], errors="coerce").dt.year
+
+    return df
 
 # -----------------------
-# 엑셀 업로드 및 변환
+# 파일 업로드 및 병합
 # -----------------------
-uploaded_file = st.file_uploader("추가로 포함할 엑셀 파일을 선택하세요", type=["xlsx", "xls"])
-if uploaded_file is not None:
-    try:
-        # ✅ 엑셀을 먼저 읽고 첫 행 확인
-        temp_df = pd.read_excel(uploaded_file, nrows=1, header=None)
-        if temp_df.iloc[0].isnull().all():  # 첫 행이 완전 공백이면
-            excel_df = pd.read_excel(uploaded_file, header=1)  # 2번째 행을 헤더로 사용
-        else:
-            excel_df = pd.read_excel(uploaded_file)  # 기본 헤더 사용
+st.title("감사 통계 및 점검표 시스템")
 
-        # ✅ 발행연도 처리
-        발행연도_col = [c for c in excel_df.columns if "발행연도" in str(c)]
-        if 발행연도_col:
-            발행연도_col = 발행연도_col[0]
-            excel_df[발행연도_col] = pd.to_numeric(excel_df[발행연도_col], errors="coerce")
+uploaded_csvs = st.file_uploader("CSV 파일 업로드", type="csv", accept_multiple_files=True)
+uploaded_excels = st.file_uploader("엑셀 파일 업로드", type=["xlsx", "xls"], accept_multiple_files=True)
 
-            # ✅ 2020년~2024년 데이터만 포함
-            excel_df = excel_df[
-                (excel_df[발행연도_col] >= 2020) & (excel_df[발행연도_col] <= 2024)
-            ]
+df = None
+if uploaded_csvs:
+    csv_dfs = []
+    for csv in uploaded_csvs:
+        for enc in ["cp949", "utf-8", "euc-kr"]:
+            try:
+                temp_df = pd.read_csv(csv, encoding=enc)
+                temp_df["출처파일"] = csv.name
+                csv_dfs.append(temp_df)
+                break
+            except:
+                continue
+    if csv_dfs:
+        df = pd.concat(csv_dfs, ignore_index=True)
 
-            excel_df["연도"] = excel_df[발행연도_col]
-        else:
-            excel_df["연도"] = None
+if uploaded_excels:
+    excel_dfs = [preprocess_excel(excel) for excel in uploaded_excels]
+    excel_df = pd.concat(excel_dfs, ignore_index=True)
+    if df is not None:
+        df = pd.concat([df, excel_df], ignore_index=True)
+    else:
+        df = excel_df
 
-
-
-        # ✅ 납품사업소 없으면 새울 3,4
-        if "납품사업소" not in excel_df.columns:
-            excel_df["납품사업소"] = "새울 3,4"
-
-        # ✅ 권고사항 = 내용 복사
-        내용_col = [c for c in excel_df.columns if "내용" in str(c)]
-        excel_df["권고사항"] = excel_df[내용_col[0]] if 내용_col else ""
-
-        # ✅ 지적유형 = 감사/검사
-        excel_df["지적유형"] = "감사/검사"
-
-        # ✅ 위배 내용 랜덤 생성
-        codes = [f"A{str(i).zfill(2)}" for i in range(1, 71)] + [f"C{str(i).zfill(2)}" for i in range(1, 16)]
-        excel_df["위배 내용"] = [random.choice(codes) for _ in range(len(excel_df))]
-
-        excel_df["출처파일"] = uploaded_file.name
-
-        # ✅ CSV와 병합
-        if df is not None:
-            df = pd.concat([df, excel_df], ignore_index=True)
-        else:
-            df = excel_df
-
-        # ✅ 병합 후 컬럼 재생성
-        df["정규화_사업명"] = df["납품사업소"].apply(normalize_project_name)
-
-        if "연도" not in df.columns:
-            df["연도"] = pd.NaT
-        if "등록일" in df.columns:
-            df.loc[df["연도"].isna(), "연도"] = pd.to_datetime(df["등록일"], errors="coerce").dt.year
-        if "검토일" in df.columns:
-            df.loc[df["연도"].isna(), "연도"] = pd.to_datetime(df["검토일"], errors="coerce").dt.year
-
-        st.success(f"✅ {uploaded_file.name} 파일 변환 및 병합 완료")
-
-    except Exception as e:
-        st.error(f"엑셀 처리 오류: {e}")
-uploaded_file2 = st.file_uploader("두 번째 엑셀 파일을 선택하세요", type=["xlsx", "xls"], key="second_excel")
-
-if uploaded_file2 is not None:
-    try:
-        temp_df2 = pd.read_excel(uploaded_file2, nrows=1, header=None)
-        if temp_df2.iloc[0].isnull().all():
-            excel_df2 = pd.read_excel(uploaded_file2, header=1)
-        else:
-            excel_df2 = pd.read_excel(uploaded_file2)
-
-        # ✅ 발행연도 처리
-        발행연도_col = [c for c in excel_df2.columns if "발행연도" in str(c)]
-        if 발행연도_col:
-            발행연도_col = 발행연도_col[0]
-            excel_df2[발행연도_col] = pd.to_numeric(excel_df2[발행연도_col], errors="coerce")
-            excel_df2 = excel_df2[(excel_df2[발행연도_col] >= 2020) & (excel_df2[발행연도_col] <= 2024)]
-            excel_df2["연도"] = excel_df2[발행연도_col]
-        else:
-            excel_df2["연도"] = None
-
-        # ✅ 납품사업소 없을 경우 새울 3,4로 설정
-        if "납품사업소" not in excel_df2.columns:
-            excel_df2["납품사업소"] = "새울 3,4"
-
-        # ✅ 내용 → 권고사항 복사, "보안 항목" 포함된 행 제거
-        내용_col = [c for c in excel_df2.columns if "내용" in str(c)]
-        if 내용_col:
-            내용_col = 내용_col[0]
-            excel_df2 = excel_df2[~excel_df2[내용_col].astype(str).str.contains("보안 항목")]
-            excel_df2["권고사항"] = excel_df2[내용_col]
-        else:
-            excel_df2["권고사항"] = ""
-
-        # ✅ 지적유형 강제 지정
-        excel_df2["지적유형"] = "감사/검사"
-
-        # ✅ 위배 내용 랜덤 생성
-        codes = [f"A{str(i).zfill(2)}" for i in range(1, 71)] + [f"C{str(i).zfill(2)}" for i in range(1, 16)]
-        excel_df2["위배 내용"] = [random.choice(codes) for _ in range(len(excel_df2))]
-
-        # ✅ 출처파일명 기록
-        excel_df2["출처파일"] = uploaded_file2.name
-
-        # ✅ 기존 df와 병합
-        if df is not None:
-            df = pd.concat([df, excel_df2], ignore_index=True)
-        else:
-            df = excel_df2
-
-        # ✅ 병합 후 정규화
-        df["정규화_사업명"] = df["납품사업소"].apply(normalize_project_name)
-
-        if "연도" not in df.columns:
-            df["연도"] = pd.NaT
-        if "등록일" in df.columns:
-            df.loc[df["연도"].isna(), "연도"] = pd.to_datetime(df["등록일"], errors="coerce").dt.year
-        if "검토일" in df.columns:
-            df.loc[df["연도"].isna(), "연도"] = pd.to_datetime(df["검토일"], errors="coerce").dt.year
-
-        st.success(f"✅ {uploaded_file2.name} 파일도 병합되었습니다.")
-
-    except Exception as e:
-        st.error(f"❌ 두 번째 엑셀 처리 오류: {e}")
-
+if df is not None:
+    st.success(f"📂 총 {len(df)}건 데이터 처리됨.")
+    st.dataframe(df.head())
 
 
 # -----------------------
