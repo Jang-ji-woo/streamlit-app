@@ -237,13 +237,14 @@ hr {
 </style>
 """, unsafe_allow_html=True)
 
+# ✅ 경로 설정
+data_folder = r"C:\Users\Owner\Documents\streamlit_app"
+
 # -----------------------
 # 기존 CSV 데이터 불러오기
 # -----------------------
 df = load_csv_files(data_folder)
 
-# ✅ 경로 설정
-data_folder = r"C:\Users\Owner\Documents\streamlit_app"
 
 # -----------------------
 # 함수 정의
