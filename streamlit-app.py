@@ -14,7 +14,7 @@ import io
 # -----------------------
 # 설정
 # -----------------------
-data_folder = "C:\Users\Owner\Documents\streamlit_app"
+data_folder = r"C:\Users\Owner\Documents\streamlit_app"
 logo_path = os.path.join(data_folder, "Kepco_logo.png")
 
 # -----------------------
@@ -117,9 +117,12 @@ for user in users:
     st.sidebar.markdown("---")
 
 
+
 # -----------------------
-# 폰트 설정 (NanumGothic, Cloud 호환)
+# 한글 폰트 설정 (Streamlit Cloud 호환)
 # -----------------------
+
+from matplotlib import rcParams
 rcParams['font.family'] = 'NanumGothic'
 rcParams['axes.unicode_minus'] = False
 
@@ -687,7 +690,7 @@ if st.session_state.show_checklist:
             )
 
 # -----------------------
-# 시스템 종료 메시지 or 안내 텍스트도 유지
+# 하단 고지
 # -----------------------
 st.markdown("""
 ---
@@ -696,10 +699,11 @@ st.markdown("""
 </p>
 """, unsafe_allow_html=True)
 
-
 # -----------------------
 # 하단 고정 로고 (항상 화면 하단 우측 고정)
 # -----------------------
+import base64
+
 if os.path.exists(logo_path):
     with open(logo_path, "rb") as image_file:
         encoded_logo = base64.b64encode(image_file.read()).decode()
