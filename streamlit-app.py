@@ -238,51 +238,32 @@ hr {
 """, unsafe_allow_html=True)
 
 # -----------------------
-# 함수 정의
+# csv 업로드
 # -----------------------
+uploaded_files = st.file_uploader("CSV 파일 여러 개 업로드", type=["csv"], accept_multiple_files=True)
 
-def load_csv_files(folder):
-    csv_files = glob.glob(os.path.join(folder, "*.csv"))
+df = None  # 전체 데이터프레임 초기화
+
+if uploaded_files:
     dfs = []
-    for file in csv_files:
+    for uploaded_file in uploaded_files:
         for enc in ['cp949', 'utf-8', 'euc-kr']:
             try:
-                df = pd.read_csv(file, encoding=enc)
-                df["출처파일"] = os.path.basename(file)
-                dfs.append(df)
+                temp_df = pd.read_csv(uploaded_file, encoding=enc)
+                temp_df["출처파일"] = uploaded_file.name
+                dfs.append(temp_df)
                 break
             except:
                 continue
-    return pd.concat(dfs, ignore_index=True) if dfs else None
 
-
-def normalize_project_name(name):
-    if pd.isna(name):
-        return ""
-    name = str(name).strip()
-    name = name.replace("-", ",").replace("–", ",").replace("—", ",")
-    name = re.sub(r'([가-힣a-zA-Z])\s*([0-9])', r'\1 \2', name)
-    name = name.replace("  ", " ")
-    name = re.sub(r'\s*,\s*', ",", name)
-    if re.search("새울.*(3.?4|3,4|3-4)", name):
-        return "새울 3,4"
-    return name
-
-
-def extract_ngrams(text, n=2):
-    words = text.split()
-    return [' '.join(words[i:i+n]) for i in range(len(words)-n+1)]
-
-# -----------------------
-# ✅ 경로 설정
-# -----------------------
-data_folder = r"C:\Users\Owner\Documents\streamlit_app"
-
-# -----------------------
-# 기존 CSV 데이터 불러오기
-# -----------------------
-df = load_csv_files(data_folder)
-
+    if dfs:
+        df = pd.concat(dfs, ignore_index=True)
+        st.success(f"✅ {len(uploaded_files)}개 CSV 파일이 성공적으로 병합되었습니다.")
+        st.dataframe(df.head())
+    else:
+        st.error("❌ CSV 파일을 읽을 수 없습니다. 인코딩 문제일 수 있습니다.")
+else:
+    st.info("👆 왼쪽에서 CSV 파일을 업로드하세요.")
 
 # ✅ 키워드 전처리 (불필요한 조사·접속사 제거)
 def clean_text(text):
