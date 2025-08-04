@@ -237,15 +237,6 @@ hr {
 </style>
 """, unsafe_allow_html=True)
 
-# ✅ 경로 설정
-data_folder = r"C:\Users\Owner\Documents\streamlit_app"
-
-# -----------------------
-# 기존 CSV 데이터 불러오기
-# -----------------------
-df = load_csv_files(data_folder)
-
-
 # -----------------------
 # 함수 정의
 # -----------------------
@@ -281,6 +272,16 @@ def normalize_project_name(name):
 def extract_ngrams(text, n=2):
     words = text.split()
     return [' '.join(words[i:i+n]) for i in range(len(words)-n+1)]
+
+# -----------------------
+# ✅ 경로 설정
+# -----------------------
+data_folder = r"C:\Users\Owner\Documents\streamlit_app"
+
+# -----------------------
+# 기존 CSV 데이터 불러오기
+# -----------------------
+df = load_csv_files(data_folder)
 
 
 # ✅ 키워드 전처리 (불필요한 조사·접속사 제거)
