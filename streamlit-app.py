@@ -14,7 +14,7 @@ import io
 # -----------------------
 # 설정
 # -----------------------
-data_folder = r"C:\Users\Owner\Documents\python\data"
+data_folder = "C:\Users\Owner\Documents\streamlit_app"
 logo_path = os.path.join(data_folder, "Kepco_logo.png")
 
 # -----------------------
@@ -117,20 +117,12 @@ for user in users:
     st.sidebar.markdown("---")
 
 
-
 # -----------------------
-# 한글 폰트 설정
+# 폰트 설정 (NanumGothic, Cloud 호환)
 # -----------------------
-if platform.system() == 'Windows':
-    font_path = 'C:/Windows/Fonts/malgun.ttf'
-elif platform.system() == 'Darwin':
-    font_path = '/System/Library/Fonts/Supplemental/AppleGothic.ttf'
-else:
-    font_path = '/usr/share/fonts/truetype/nanum/NanumGothic.ttf'
+rcParams['font.family'] = 'NanumGothic'
+rcParams['axes.unicode_minus'] = False
 
-font_name = fm.FontProperties(fname=font_path).get_name()
-plt.rc('font', family=font_name)
-plt.rcParams['axes.unicode_minus'] = False
 
 # -----------------------
 # 자동 분류 기준 설정
@@ -695,7 +687,7 @@ if st.session_state.show_checklist:
             )
 
 # -----------------------
-# 하단 고지
+# 시스템 종료 메시지 or 안내 텍스트도 유지
 # -----------------------
 st.markdown("""
 ---
@@ -704,11 +696,10 @@ st.markdown("""
 </p>
 """, unsafe_allow_html=True)
 
+
 # -----------------------
 # 하단 고정 로고 (항상 화면 하단 우측 고정)
 # -----------------------
-import base64
-
 if os.path.exists(logo_path):
     with open(logo_path, "rb") as image_file:
         encoded_logo = base64.b64encode(image_file.read()).decode()
