@@ -11,6 +11,7 @@ from collections import Counter
 import io
 import random
 import base64
+import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -44,15 +45,12 @@ users = [
     {"name": "나금영", "role": "책임자", "image": "lee.jpg", "menu": ["데이터 업로드", "통계 설정", "시스템 설정"]},
 ]
 
-# ✅ 사용자 전환용 인덱스 상태값 초기화
 if "selected_user_idx" not in st.session_state:
     st.session_state.selected_user_idx = 0
 
-# ✅ 사용자 전환 버튼
 if st.sidebar.button("사용자 전환"):
     st.session_state.selected_user_idx = (st.session_state.selected_user_idx + 1) % len(users)
 
-# ✅ 현재 선택된 사용자 정보 (줄바꿈 포함)
 current_user = users[st.session_state.selected_user_idx]
 st.sidebar.markdown(f"⚙️ **현재 선택된 사용자:**<br>{current_user['name']} ({current_user['role']})", unsafe_allow_html=True)
 
@@ -305,7 +303,6 @@ def preprocess_excel(file):
     else:
         df = pd.read_excel(file)
 
-    # 연도 처리
     year_col = [c for c in df.columns if "발행연도" in str(c)]
     if year_col:
         year_col = year_col[0]
@@ -313,13 +310,11 @@ def preprocess_excel(file):
         df = df[(df[year_col] >= 2020) & (df[year_col] <= 2024)]
         df["연도"] = df[year_col]
     else:
-        df["연도"] = None
+        df["연도"] = np.nan
 
-    # 납품사업소 없을 경우
     if "납품사업소" not in df.columns:
         df["납품사업소"] = "새울 3,4"
 
-    # 권고사항 처리 + 보안 항목 제외
     내용_col = [c for c in df.columns if "내용" in str(c)]
     if 내용_col:
         내용_col = 내용_col[0]
@@ -334,15 +329,42 @@ def preprocess_excel(file):
     df["출처파일"] = file.name
     df["정규화_사업명"] = df["납품사업소"].apply(normalize_project_name)
 
-    # 등록일, 검토일 보정
-    if "연도" not in df.columns:
-        df["연도"] = pd.NaT
     if "등록일" in df.columns:
         df.loc[df["연도"].isna(), "연도"] = pd.to_datetime(df["등록일"], errors="coerce").dt.year
     if "검토일" in df.columns:
         df.loc[df["연도"].isna(), "연도"] = pd.to_datetime(df["검토일"], errors="coerce").dt.year
 
     return df
+
+# ⚠️ 경고: 파일 미업로드 시 경고 메시지 추가
+uploaded_csvs = st.file_uploader("CSV 파일 업로드", type="csv", accept_multiple_files=True)
+uploaded_excels = st.file_uploader("엑셀 파일 업로드", type=["xlsx", "xls"], accept_multiple_files=True)
+
+df = None
+if uploaded_csvs:
+    csv_dfs = []
+    for csv in uploaded_csvs:
+        for enc in ["cp949", "utf-8", "euc-kr"]:
+            try:
+                temp_df = pd.read_csv(csv, encoding=enc)
+                temp_df["출처파일"] = csv.name
+                csv_dfs.append(temp_df)
+                break
+            except:
+                continue
+    if csv_dfs:
+        df = pd.concat(csv_dfs, ignore_index=True)
+
+if uploaded_excels:
+    excel_dfs = [preprocess_excel(excel) for excel in uploaded_excels]
+    excel_df = pd.concat(excel_dfs, ignore_index=True)
+    if df is not None:
+        df = pd.concat([df, excel_df], ignore_index=True)
+    else:
+        df = excel_df
+
+if not uploaded_csvs and not uploaded_excels:
+    st.warning("📂 CSV 또는 엑셀 파일을 먼저 업로드해주세요.")
 
 # -----------------------
 # 파일 업로드 및 병합
