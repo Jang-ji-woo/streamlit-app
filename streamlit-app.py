@@ -10,6 +10,10 @@ import altair as alt
 from collections import Counter
 import io
 
+# -----------------------
+# 기존 CSV 데이터 불러오기
+# -----------------------
+df = load_csv_files(data_folder)
 
 # -----------------------
 # 설정
