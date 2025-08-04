@@ -10,10 +10,6 @@ import altair as alt
 from collections import Counter
 import io
 
-# -----------------------
-# 기존 CSV 데이터 불러오기
-# -----------------------
-df = load_csv_files(data_folder)
 
 # -----------------------
 # 설정
@@ -242,6 +238,14 @@ hr {
 """, unsafe_allow_html=True)
 
 # -----------------------
+# 기존 CSV 데이터 불러오기
+# -----------------------
+df = load_csv_files(data_folder)
+
+# ✅ 경로 설정
+data_folder = r"C:\Users\Owner\Documents\streamlit_app"
+
+# -----------------------
 # 함수 정의
 # -----------------------
 
@@ -322,10 +326,7 @@ def convert_to_check_item(text):
 
 import random
 
-# -----------------------
-# 기존 CSV 데이터 불러오기
-# -----------------------
-df = load_csv_files(data_folder)
+
 
 # -----------------------
 # 엑셀 업로드 및 변환
